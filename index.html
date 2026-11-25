@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2023 산업연관표 분석 웹앱</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./style.css">
+<script defer src="./app.js"></script>
+</head>
+<body>
+<header>
+  <p class="eyebrow">2023 · 생산자가격 · 대분류 33 / 중분류 83 / 소분류 165 / 기본부문 380</p>
+  <h1>2023 산업연관표 분석 웹앱</h1>
+  <p>한국은행 2023년 산업연관표(연장표)의 네 가지 분류 투입산출표를 브라우저에서 불러와 산업구조, 연관효과, 최종수요 유발효과, 수요충격의 생산·소득·세수·고용 파급효과, 물가파급효과, 분류 수준 간 차이를 분석합니다.</p>
+</header>
+
+<nav aria-label="주요 메뉴">
+  <a href="#load">자료 불러오기</a><a href="#explorer">원자료 탐색</a><a href="#structure">산업구조</a>
+  <a href="#linkage">연관효과</a><a href="#final">최종수요 유발효과</a><a href="#simulation">시뮬레이터</a><a href="#price">물가파급효과</a>
+  <a href="#compare">분류 수준 비교</a><a href="#method">분석 방법·단위</a>
+</nav>
+
+<div class="levelbar" aria-label="분석 분류 선택">
+  <label>분석 분류
+    <select id="level" disabled></select>
+  </label>
+  <p id="status" role="status">아래 "자료 불러오기"에서 투입산출표를 불러오세요.</p>
+</div>
+
+<main>
+<section id="load">
+  <h2>0. 자료 불러오기</h2>
+  <p class="note">모든 분석 표는 표 제목 옆 「CSV」 버튼으로 현재 정렬·검색 상태 그대로 내려받을 수 있습니다(보고서 작성용).</p>
+  <p>분류별 투입산출표(각 12개 시트)를 불러옵니다. 처음 한 번은 브라우저 Python(Pyodide) 준비에 시간이 걸립니다. 기본부문(약 12MB)은 불러오는 데 가장 오래 걸립니다.</p>
+  <div class="load-grid" id="load-grid"></div>
+  <button id="load-all" type="button">네 분류 모두 불러오기</button>
+  <p class="note">함께 불러오는 보조자료: 부문분류표(기본부문→소·중·대분류 연결), 주요표(2020~2023년 대분류 취업·고용계수 등).</p>
+  <details><summary>계수 검증 결과</summary><pre id="validation">아직 자료를 불러오지 않았습니다.</pre></details>
+</section>
+
+<section id="explorer">
+  <h2>1. 원자료 탐색</h2>
+  <p>선택한 분류의 시트에서 한 행을 골라 각 열의 값을 확인합니다. 산업 행뿐 아니라 합계·부가가치·분석지표 행(영향력계수, 구성비, 유발계수 등)도 포함됩니다.</p>
+  <div class="grid2">
+    <label>시트<select id="sheet" disabled></select></label>
+    <label>행 이름·코드 검색<input id="row-search" disabled placeholder="예: 반도체, 부가가치, 9801"></label>
+    <label>행 선택<select id="row" disabled></select></label>
+    <label>열 이름·코드 검색<input id="col-search" disabled placeholder="예: 수출, 9140"></label>
+  </div>
+  <p id="unit" class="unit"></p>
+  <div class="scroll"><table><caption id="explore-caption">자료를 불러온 후 표시됩니다.</caption>
+    <thead><tr><th>열 코드</th><th>열 이름</th><th class="num">원자료 값</th></tr></thead><tbody id="cells"></tbody></table></div>
+</section>
+
+<section id="structure">
+  <h2>2. 산업구조 분석</h2>
+  <p>총거래표·수입거래표에서 부문별 총산출, 부가가치, 투입구조, 수출입 비율을 계산합니다. 열 제목을 누르면 정렬되고, 행을 누르면 아래에 부문 상세가 나옵니다.</p>
+  <div class="cards" id="structure-cards"></div>
+  <label>부문 검색<input id="structure-search" disabled placeholder="부문 이름 또는 코드"></label>
+  <div class="scroll" id="structure-table"></div>
+  <p class="note">단위: 총산출·부가가치 백만원, 나머지 %. 중간투입률=중간투입/총투입, 부가가치율=부가가치/총투입, 국산화율=국산 중간투입/중간투입, 수입의존도=수입 중간투입/총투입, 수출률=수출/총산출, 수입률=수입/총공급, 중간수요율=중간수요/총공급.</p>
+  <h3>산업 간 거래 히트맵 (투입계수)</h3>
+  <p>행 부문이 열 부문 생산 1원에 투입하는 금액(투입계수)을 색 농도로 나타냅니다. 진할수록 거래가 많습니다. 칸에 마우스를 올리면 값이 보입니다. 대분류·중분류에서만 그립니다.</p>
+  <label>투입계수 종류<select id="heat-kind" disabled>
+    <option value="A">총투입계수 (A, 국산+수입)</option><option value="Ad">국산투입계수 (Ad)</option><option value="Am">수입투입계수 (Am)</option>
+  </select></label>
+  <div id="heatmap" class="chart"></div>
+  <div id="detail" hidden></div>
+</section>
+
+<section id="linkage">
+  <h2>3. 연관효과 분석 (영향력계수·감응도계수)</h2>
+  <p>생산유발계수 행렬 L=(I−Ad)<sup>−1</sup>의 열합(후방연쇄)과 행합(전방연쇄)을 전 산업 평균으로 나눈 값입니다. 둘 다 1 이상이면 다른 산업과 앞뒤로 많이 얽힌 핵심산업으로 분류합니다.</p>
+  <div id="scatter" class="chart"></div>
+  <div class="grid2">
+    <label>유형 필터<select id="linkage-filter" disabled>
+      <option value="">전체</option><option>핵심(주도)산업</option><option>후방연관 높음</option><option>전방연관 높음</option><option>독립(저연관)산업</option>
+    </select></label>
+    <label>부문 검색<input id="linkage-search" disabled placeholder="부문 이름 또는 코드"></label>
+  </div>
+  <div class="scroll" id="linkage-table"></div>
+  <p class="note">취업유발계수는 해당 부문 국산품 최종수요 10억원이 유발하는 취업자 수(명/10억원)이며, 대분류가 아닌 분류에서는 소속 대분류 취업계수를 적용한 근사치입니다. 영향력계수·감응도계수·승수는 무단위입니다. 생산·부가가치·수입 승수는 해당 부문 국산품 최종수요 1원이 경제 전체에 유발하는 생산·부가가치·수입액(원)입니다.</p>
+</section>
+
+<section id="final">
+  <h2>4. 최종수요 항목별 유발효과</h2>
+  <p>소비·투자·수출 등 최종수요 항목이 국내 생산, 수입, 부가가치, 취업을 얼마나 유발하는지 원표의 "최종수요 항목별 유발액" 시트로 정리합니다. 유발계수는 국산 최종수요 1원(취업은 10억원)당 값입니다.</p>
+  <div class="scroll" id="fd-items"></div>
+  <div id="fd-bars" class="chart"></div>
+  <h3>부문별 생산유발의존도</h3>
+  <p>각 부문의 생산유발액 중 각 최종수요 항목이 차지하는 비중(%)입니다. 수출 의존도가 높은 부문은 해외 수요 변화에 민감합니다.</p>
+  <label>부문 검색<input id="fd-search" disabled placeholder="부문 이름 또는 코드"></label>
+  <div class="scroll" id="fd-dep"></div>
+</section>
+
+<section id="simulation">
+  <h2>5. 국산품 최종수요 변화 시뮬레이션</h2>
+  <p>수입 완제품을 뺀 국산품 최종수요의 변화(증가는 양수, 감소는 음수)를 금액이나 비율(예: 집적회로 수출 −10%)로 입력하면 생산·수입·부가가치·취업 파급효과를 계산합니다. 여러 부문의 입력은 합산됩니다.</p>
+  <h3>대표 시나리오 바로 실행</h3>
+  <p class="note">버튼을 누르면 해당 충격을 가장 세분된 분류(가능하면 기본부문)로 계산하고 대분류로 묶어 보여줍니다.</p>
+  <div id="presets" class="presets"></div>
+  <h3>직접 시나리오 만들기</h3>
+  <label>부문 검색<input id="sector-search" disabled placeholder="부문 이름 또는 코드"></label>
+  <form id="scenario">
+    <div class="grid2">
+      <label>부문<select id="sector" disabled required></select></label>
+      <label>입력 방식<select id="mode" disabled>
+        <option value="amount">금액으로 입력 (백만원)</option>
+        <option value="pct">기존 국산 최종수요 대비 비율로 입력 (%)</option>
+      </select></label>
+      <label id="item-label" hidden>기준 최종수요 항목<select id="item" disabled>
+        <option value="9140">수출</option><option value="9111">민간소비지출</option><option value="9112">정부소비지출</option>
+        <option value="9121">민간고정자본형성</option><option value="9122">정부고정자본형성</option><option value="9190">최종수요계</option>
+      </select></label>
+      <label><span id="amount-label">변화액 (백만원)</span><input id="amount" type="number" step="any" value="1000" disabled required></label>
+    </div>
+    <p class="note" id="amount-note">1,000백만원 = 10억원. 감소 충격은 음수(예: −1000)로 입력하세요.</p>
+    <button id="add" disabled>시나리오에 추가</button>
+  </form>
+  <ul id="basket"></ul>
+  <div class="grid2">
+    <label>결과 집계 기준<select id="aggregate" disabled><option value="">집계하지 않음</option></select></label>
+  </div>
+  <button id="run" disabled>파급효과 계산</button><button id="clear" type="button">시나리오 비우기</button>
+  <p id="sim-status" role="status">시나리오를 추가하세요.</p>
+  <div id="results" hidden>
+    <div class="summary" id="sim-summary"></div>
+    <div class="cards" id="cards"></div>
+    <h3>부가가치 유발액의 구성 (소득·세수 효과)</h3>
+    <div class="cards" id="va-cards"></div>
+    <p class="note" id="emp-note"></p>
+    <h3>생산유발액 상위 15개 부문</h3>
+    <div id="bars"></div>
+    <button id="download" type="button">전체 결과 CSV 다운로드</button>
+    <div class="scroll" id="result-table"></div>
+  </div>
+</section>
+
+<section id="price">
+  <h2>6. 물가파급효과 분석 (비용 인상의 가격 파급)</h2>
+  <p>원유 등 수입품 가격, 전기요금 같은 국내 공공요금, 임금이 오를 때 산업별 생산자가격과 소비자물가가 얼마나 오르는지 레온티예프 가격모형으로 계산합니다. 가격이 지정된 부문은 외생, 나머지 부문은 비용 상승분을 모두 가격에 전가한다고 가정합니다.</p>
+  <div id="price-presets" class="presets"></div>
+  <div class="grid2">
+    <label>부문 검색<input id="price-search" disabled placeholder="예: 원유, 화력, 석탄"></label>
+    <label>부문<select id="price-sector" disabled></select></label>
+    <label>가격 변화 종류<select id="price-type" disabled>
+      <option value="imports">수입품 가격 변화 (예: 원유 수입가격)</option>
+      <option value="domestic">국내 생산품 가격 고정 인상 (예: 전기요금)</option>
+    </select></label>
+    <label>가격 변화율 (%)<input id="price-pct" type="number" step="any" value="10" disabled></label>
+  </div>
+  <button id="price-add" type="button" disabled>가격 변화 추가</button>
+  <label>임금(피용자보수) 상승률 (%)<input id="wage-pct" type="number" step="any" value="0" disabled></label>
+  <ul id="price-basket"></ul>
+  <button id="price-run" type="button" disabled>물가파급효과 계산</button><button id="price-clear" type="button">비우기</button>
+  <p id="price-status" role="status"></p>
+  <div id="price-results" hidden>
+    <div class="summary" id="price-summary"></div>
+    <div class="cards" id="price-cards"></div>
+    <h3>가격 상승률 상위 15개 부문 (%)</h3>
+    <div id="price-bars"></div>
+    <div class="scroll" id="price-table"></div>
+  </div>
+  <p class="note">단위: 가격 변화율 %. 소비자물가 영향은 2023년 민간소비지출(국산+수입) 구성비로 가중한 근사치이며, 생산자물가 영향은 총산출 가중 평균입니다. 수요 감소나 마진 흡수 같은 행동 변화는 반영하지 않으므로 상한치로 해석합니다.</p>
+</section>
+
+<section id="compare">
+  <h2>7. 분류 수준 비교 (집계 수준에 따른 승수 차이)</h2>
+  <p>기본부문 하나를 고르면, 그 부문이 속한 소분류·중분류·대분류 부문의 승수를 나란히 비교합니다. 분류가 거칠수록 서로 다른 산업이 한 부문으로 묶여 승수가 평균화되는 집계편의(aggregation bias)를 확인할 수 있습니다.</p>
+  <label>기본부문 검색<input id="compare-search" disabled placeholder="예: 반도체, 자동차, 0111"></label>
+  <label>기본부문<select id="compare-sector" disabled></select></label>
+  <p id="compare-path" class="unit"></p>
+  <div class="scroll" id="compare-table"></div>
+  <p class="note">불러오지 않은 분류는 "미로드"로 표시됩니다. 네 분류를 모두 불러오면 완전한 비교가 됩니다. 취업유발계수(명/10억원)는 대분류 취업계수를 하위 부문에 적용한 근사치입니다.</p>
+</section>
+
+<section id="method">
+  <h2>8. 분석 방법과 단위</h2>
+  <dl class="method">
+    <dt>자료</dt><dd>한국은행 「2023년 산업연관표(연장표)」 생산자가격 투입산출표(대분류 33, 중분류 83, 소분류 165, 기본부문 380), 부문분류표, 주요표. 2025년 9월 공표.</dd>
+    <dt>금액 단위</dt><dd>거래표·유발액은 백만원(1,000백만원 = 10억원). 투입계수·유발계수·영향력계수·감응도계수는 무단위(원당 원). 비율은 %. 취업·고용계수와 취업유발계수는 명/10억원, 취업유발인원은 명.</dd>
+    <dt>생산유발</dt><dd>Δx = (I − Ad)<sup>−1</sup> Δf. Ad는 국산투입계수, Δf는 국산품 최종수요 변화.</dd>
+    <dt>수입·부가가치 유발</dt><dd>Δm = Am(I − Ad)<sup>−1</sup> Δf, Δv = Âv(I − Ad)<sup>−1</sup> Δf. Am은 수입투입계수, Âv는 부가가치율 대각행렬.</dd>
+    <dt>취업유발</dt><dd>Δe = Ê Δx / 1000. Ê는 대분류 취업계수(명/10억원). 중·소분류와 기본부문에는 소속 대분류 계수를 적용하므로 근사치입니다.</dd>
+    <dt>소득·세수 효과</dt><dd>부가가치 유발액을 부문별 피용자보수율·영업잉여율·고정자본소모율·순생산세율로 나눠 Σ (구성 항목/총투입)ᵢ Δxᵢ로 계산합니다.</dd>
+    <dt>물가파급효과</dt><dd>Δp<sub>O</sub>' = c<sub>O</sub>'(I − Ad<sub>OO</sub>)<sup>−1</sup>, c = Σ Δpm·Am + Σ Δp<sub>K</sub>·Ad<sub>K·</sub> + w·(피용자보수/총투입). K는 가격을 지정한 외생 부문, O는 나머지 부문입니다. 소비자물가 영향 = Σ (민간소비 비중 × 가격 변화율).</dd>
+    <dt>영향력·감응도계수</dt><dd>영향력계수 = L의 j열 합 / 열합 평균, 감응도계수 = L의 i행 합 / 행합 평균.</dd>
+    <dt>검증</dt><dd>불러올 때 (I−Ad)L = I, Am·L = 수입유발계수, Âv·L = 부가가치유발계수, 원표 영향력·감응도계수, L·Yd = 항목별 생산유발액을 다시 계산해 일치하는지 확인합니다.</dd>
+    <dt>한계</dt><dd>고정 투입계수와 공급 제약이 없다는 가정을 깔고 있어 단기·소규모 충격에 적합합니다. 가격 변화, 규모의 경제, 생산능력 제약은 반영하지 않습니다.</dd>
+  </dl>
+</section>
+</main>
+<footer>2023 산업연관표 분석 웹앱 · 브라우저 계산(Pyodide) · GitHub Pages 배포용 · 자료: 한국은행</footer>
+</body>
+</html>
