@@ -12,13 +12,13 @@
 <header>
   <p class="eyebrow">2023 · 생산자가격 · 대분류 33 / 중분류 83 / 소분류 165 / 기본부문 380</p>
   <h1>2023 산업연관표 분석 웹앱</h1>
-  <p>한국은행 2023년 산업연관표(연장표)의 네 가지 분류 투입산출표를 브라우저에서 불러와 산업구조, 연관효과, 최종수요 유발효과, 수요충격의 생산·소득·세수·고용 파급효과, 물가파급효과, 분류 수준 간 차이를 분석합니다.</p>
+  <p>한국은행 2023년 산업연관표(연장표)의 네 가지 분류 투입산출표를 브라우저에서 불러와 산업구조, 두 산업 비교, 연관효과, 최종수요 유발효과, 수요충격의 생산·소득·세수·고용 파급효과, 물가파급효과, 공급망 취약성, 분류 수준 간 차이, 2020~2023년 추이를 분석합니다.</p>
 </header>
 
 <nav aria-label="주요 메뉴">
   <a href="#load">자료 불러오기</a><a href="#explorer">원자료 탐색</a><a href="#structure">산업구조</a>
-  <a href="#linkage">연관효과</a><a href="#final">최종수요 유발효과</a><a href="#simulation">시뮬레이터</a><a href="#price">물가파급효과</a>
-  <a href="#compare">분류 수준 비교</a><a href="#method">분석 방법·단위</a>
+  <a href="#pair">두 산업 비교</a><a href="#linkage">연관효과</a><a href="#final">최종수요 유발효과</a><a href="#simulation">시뮬레이터</a>
+  <a href="#price">물가파급효과</a><a href="#supply">공급망 취약성</a><a href="#compare">분류 수준 비교</a><a href="#trend">2020~2023 추이</a><a href="#method">분석 방법·단위</a>
 </nav>
 
 <div class="levelbar" aria-label="분석 분류 선택">
@@ -69,8 +69,20 @@
   <div id="detail" hidden></div>
 </section>
 
+<section id="pair">
+  <h2>3. 두 산업 비교</h2>
+  <p>두 부문을 골라 산업구조, 승수, 일자리, 부가가치 구성, 주요 거래처를 나란히 비교합니다. 선택한 분석 분류 기준으로 계산합니다.</p>
+  <div class="grid2">
+    <div><label>산업 A 검색<input id="pair-search-a" disabled placeholder="예: 집적회로, 컴퓨터"></label>
+      <label>산업 A<select id="pair-a" disabled></select></label></div>
+    <div><label>산업 B 검색<input id="pair-search-b" disabled placeholder="예: 승용차, 운송장비"></label>
+      <label>산업 B<select id="pair-b" disabled></select></label></div>
+  </div>
+  <div id="pair-out"></div>
+</section>
+
 <section id="linkage">
-  <h2>3. 연관효과 분석 (영향력계수·감응도계수)</h2>
+  <h2>4. 연관효과 분석 (영향력계수·감응도계수)</h2>
   <p>생산유발계수 행렬 L=(I−Ad)<sup>−1</sup>의 열합(후방연쇄)과 행합(전방연쇄)을 전 산업 평균으로 나눈 값입니다. 둘 다 1 이상이면 다른 산업과 앞뒤로 많이 얽힌 핵심산업으로 분류합니다.</p>
   <div id="scatter" class="chart"></div>
   <div class="grid2">
@@ -84,7 +96,7 @@
 </section>
 
 <section id="final">
-  <h2>4. 최종수요 항목별 유발효과</h2>
+  <h2>5. 최종수요 항목별 유발효과</h2>
   <p>소비·투자·수출 등 최종수요 항목이 국내 생산, 수입, 부가가치, 취업을 얼마나 유발하는지 원표의 "최종수요 항목별 유발액" 시트로 정리합니다. 유발계수는 국산 최종수요 1원(취업은 10억원)당 값입니다.</p>
   <div class="scroll" id="fd-items"></div>
   <div id="fd-bars" class="chart"></div>
@@ -95,7 +107,7 @@
 </section>
 
 <section id="simulation">
-  <h2>5. 국산품 최종수요 변화 시뮬레이션</h2>
+  <h2>6. 국산품 최종수요 변화 시뮬레이션</h2>
   <p>수입 완제품을 뺀 국산품 최종수요의 변화(증가는 양수, 감소는 음수)를 금액이나 비율(예: 집적회로 수출 −10%)로 입력하면 생산·수입·부가가치·취업 파급효과를 계산합니다. 여러 부문의 입력은 합산됩니다.</p>
   <h3>대표 시나리오 바로 실행</h3>
   <p class="note">버튼을 누르면 해당 충격을 가장 세분된 분류(가능하면 기본부문)로 계산하고 대분류로 묶어 보여줍니다.</p>
@@ -138,7 +150,7 @@
 </section>
 
 <section id="price">
-  <h2>6. 물가파급효과 분석 (비용 인상의 가격 파급)</h2>
+  <h2>7. 물가파급효과 분석 (비용 인상의 가격 파급)</h2>
   <p>원유 등 수입품 가격, 전기요금 같은 국내 공공요금, 임금이 오를 때 산업별 생산자가격과 소비자물가가 얼마나 오르는지 레온티예프 가격모형으로 계산합니다. 가격이 지정된 부문은 외생, 나머지 부문은 비용 상승분을 모두 가격에 전가한다고 가정합니다.</p>
   <div id="price-presets" class="presets"></div>
   <div class="grid2">
@@ -165,8 +177,20 @@
   <p class="note">단위: 가격 변화율 %. 소비자물가 영향은 2023년 민간소비지출(국산+수입) 구성비로 가중한 근사치이며, 생산자물가 영향은 총산출 가중 평균입니다. 수요 감소나 마진 흡수 같은 행동 변화는 반영하지 않으므로 상한치로 해석합니다.</p>
 </section>
 
+<section id="supply">
+  <h2>8. 공급망 취약성 분석 (특정 수입품 의존도)</h2>
+  <p>수입품 하나를 고르면, 각 부문이 그 수입품에 직접·간접으로 얼마나 의존하는지 계산합니다. 직접 의존은 해당 부문이 수입품을 원료로 바로 쓰는 양이고, 간접 의존은 협력 부문을 거쳐 들어가는 양입니다. 공급 차질(예: 원유·LNG 수입 중단, 소재 수출규제)이 생기면 어느 산업이 먼저 영향을 받는지 파악하는 데 씁니다.</p>
+  <div id="supply-presets" class="presets"></div>
+  <div class="grid2">
+    <label>수입품 검색<input id="supply-search" disabled placeholder="예: 원유, 천연가스, 집적회로"></label>
+    <label>수입품 (수입액 큰 순)<select id="supply-item" disabled></select></label>
+  </div>
+  <div id="supply-out"></div>
+  <p class="note">단위: 의존도는 해당 부문 국산품 최종수요 1,000원이 경제 전체에서 유발하는 선택 수입품의 수입액(원/1,000원). 노출액은 2023년 국산 최종수요 전체를 기준으로 그 부문을 위해 쓰인 선택 수입품의 수입액(백만원)이며, 모든 부문의 노출액 합은 선택 수입품의 중간재 수입액과 같습니다.</p>
+</section>
+
 <section id="compare">
-  <h2>7. 분류 수준 비교 (집계 수준에 따른 승수 차이)</h2>
+  <h2>9. 분류 수준 비교 (집계 수준에 따른 승수 차이)</h2>
   <p>기본부문 하나를 고르면, 그 부문이 속한 소분류·중분류·대분류 부문의 승수를 나란히 비교합니다. 분류가 거칠수록 서로 다른 산업이 한 부문으로 묶여 승수가 평균화되는 집계편의(aggregation bias)를 확인할 수 있습니다.</p>
   <label>기본부문 검색<input id="compare-search" disabled placeholder="예: 반도체, 자동차, 0111"></label>
   <label>기본부문<select id="compare-sector" disabled></select></label>
@@ -175,8 +199,22 @@
   <p class="note">불러오지 않은 분류는 "미로드"로 표시됩니다. 네 분류를 모두 불러오면 완전한 비교가 됩니다. 취업유발계수(명/10억원)는 대분류 취업계수를 하위 부문에 적용한 근사치입니다.</p>
 </section>
 
+<section id="trend">
+  <h2>10. 2020~2023년 산업구조 추이 (주요표)</h2>
+  <p>한국은행 주요표의 2020~2023년 대분류(33부문) 지표로 산업구조가 어떻게 변했는지 봅니다. 그래프에는 전산업과 선택한 두 부문을 그리고, 아래 표에는 모든 부문의 4년 값과 변화폭을 정리합니다.</p>
+  <div class="grid2">
+    <label>지표<select id="trend-ind" disabled></select></label>
+    <label>부문 1<select id="trend-a" disabled></select></label>
+    <label>부문 2<select id="trend-b" disabled></select></label>
+  </div>
+  <div class="summary" id="trend-summary" hidden></div>
+  <div id="trend-chart" class="chart"></div>
+  <div class="scroll" id="trend-table"></div>
+  <p class="note">자료: 한국은행 「2023년 산업연관표(연장표)」 주요표. 지표의 단위는 지표 이름에 표기(%, 명/10억원). 변화폭은 2023년 값 − 2020년 값(%p 또는 명/10억원)입니다.</p>
+</section>
+
 <section id="method">
-  <h2>8. 분석 방법과 단위</h2>
+  <h2>11. 분석 방법과 단위</h2>
   <dl class="method">
     <dt>자료</dt><dd>한국은행 「2023년 산업연관표(연장표)」 생산자가격 투입산출표(대분류 33, 중분류 83, 소분류 165, 기본부문 380), 부문분류표, 주요표. 2025년 9월 공표.</dd>
     <dt>금액 단위</dt><dd>거래표·유발액은 백만원(1,000백만원 = 10억원). 투입계수·유발계수·영향력계수·감응도계수는 무단위(원당 원). 비율은 %. 취업·고용계수와 취업유발계수는 명/10억원, 취업유발인원은 명.</dd>
@@ -185,6 +223,9 @@
     <dt>취업유발</dt><dd>Δe = Ê Δx / 1000. Ê는 대분류 취업계수(명/10억원). 중·소분류와 기본부문에는 소속 대분류 계수를 적용하므로 근사치입니다.</dd>
     <dt>소득·세수 효과</dt><dd>부가가치 유발액을 부문별 피용자보수율·영업잉여율·고정자본소모율·순생산세율로 나눠 Σ (구성 항목/총투입)ᵢ Δxᵢ로 계산합니다.</dd>
     <dt>물가파급효과</dt><dd>Δp<sub>O</sub>' = c<sub>O</sub>'(I − Ad<sub>OO</sub>)<sup>−1</sup>, c = Σ Δpm·Am + Σ Δp<sub>K</sub>·Ad<sub>K·</sub> + w·(피용자보수/총투입). K는 가격을 지정한 외생 부문, O는 나머지 부문입니다. 소비자물가 영향 = Σ (민간소비 비중 × 가격 변화율).</dd>
+    <dt>공급망 취약성</dt><dd>수입품 i에 대한 부문 j의 직간접 의존도 = (Am·L)<sub>ij</sub>, 직접 의존도 = Am<sub>ij</sub>, 노출액 = (Am·L)<sub>ij</sub> × 부문 j의 국산 최종수요. 노출액 합계는 수입품 i의 중간재 수입액과 일치하며, 불러올 때마다 이 항등식을 확인합니다.</dd>
+    <dt>두 산업 비교</dt><dd>총거래표·유발계수표에서 두 부문의 비율, 승수(생산·부가가치·수입유발계수의 열합), 영향력·감응도계수, 부가가치 구성비, 최종수요 항목별 생산유발의존도, 상위 투입처·판매처를 뽑아 비교합니다.</dd>
+    <dt>2020~2023 추이</dt><dd>주요표의 대분류 부문별 중간투입률·국산화율·수입의존도·부가가치율·수출률·수입률·취업계수·고용계수를 그대로 사용합니다.</dd>
     <dt>영향력·감응도계수</dt><dd>영향력계수 = L의 j열 합 / 열합 평균, 감응도계수 = L의 i행 합 / 행합 평균.</dd>
     <dt>검증</dt><dd>불러올 때 (I−Ad)L = I, Am·L = 수입유발계수, Âv·L = 부가가치유발계수, 원표 영향력·감응도계수, L·Yd = 항목별 생산유발액을 다시 계산해 일치하는지 확인합니다.</dd>
     <dt>한계</dt><dd>고정 투입계수와 공급 제약이 없다는 가정을 깔고 있어 단기·소규모 충격에 적합합니다. 가격 변화, 규모의 경제, 생산능력 제약은 반영하지 않습니다.</dd>

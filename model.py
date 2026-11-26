@@ -28,9 +28,12 @@ mapping = None   # 기본부문 코드 → {'380':..,'165':..,'83':..,'33':..}
 names_by = {}    # 분류 → {코드: 이름} (부문분류표 기준)
 employ = None    # 대분류 코드 → {'emp': 취업계수, 'wage': 고용계수}
 trends = None    # 대분류 코드 → {지표: [2020, 2021, 2022, 2023]} (주요표)
-TREND_SHEETS = [('3. 중간투입률', '중간투입률(%)'), ('4. 국산화율', '국산화율(%)'),
-                ('5. 수입의존도', '수입의존도(%)'), ('6. 부가가치율', '부가가치율(%)'),
-                ('18. 취업계수 및 고용계수', '취업계수(명/10억원)')]
+# (시트, 지표 이름, 숫자 고르는 방식): first4 = 2020~2023 4개, even = 비율·구성비가 번갈아 나오는 시트의 비율 4개
+TREND_SHEETS = [('3. 중간투입률', '중간투입률(%)', 'first4'), ('4. 국산화율', '국산화율(%)', 'first4'),
+                ('5. 수입의존도', '수입의존도(%)', 'first4'), ('6. 부가가치율', '부가가치율(%)', 'first4'),
+                ('9. 수출률 및 구성', '수출률(%)', 'even'), ('10. 수입률 및 구성', '수입률(%)', 'even'),
+                ('18. 취업계수 및 고용계수', '취업계수(명/10억원)', 'first4')]
+TREND_YEARS = [2020, 2021, 2022, 2023]
 
 
 def emit(x):
@@ -188,7 +191,7 @@ def load_aux(map_raw, main_raw):
     mapping = mp
 
     wb = openpyxl.load_workbook(io.BytesIO(bytes(main_raw)), read_only=True, data_only=True)
-    main = {s: [tuple(r) for r in wb[s].values] for s, _ in TREND_SHEETS}
+    main = {s: [tuple(r) for r in wb[s].values] for s, _, _ in TREND_SHEETS}
     wb.close()
 
     def norm(s):
@@ -203,7 +206,10 @@ def load_aux(map_raw, main_raw):
                 continue
             out.setdefault(norm(label), (r, nums))
         return out
-    tables = {s: by_label(main[s]) for s, _ in TREND_SHEETS}
+    tables = {s: by_label(main[s]) for s, _, _ in TREND_SHEETS}
+
+    def pick(nums, how):
+        return [float(x) for x in (nums[0:8:2] if how == 'even' else nums[:4])]
     emp, tr = {}, {}
     for code, name in names_by['33'].items():
         key = norm(name)
@@ -212,9 +218,15 @@ def load_aux(map_raw, main_raw):
             raise ValueError('주요표에서 대분류 "%s"의 취업계수를 찾지 못했습니다.' % name)
         r = hit[0]
         emp[code] = {'emp': float(r[8]), 'wage': float(r[13])}
-        tr[code] = {label: [float(x) for x in tables[s][key][1][:4]] if key in tables[s] else None
-                    for s, label in TREND_SHEETS}
+        tr[code] = {label: pick(tables[s][key][1], how) if key in tables[s] else None
+                    for s, label, how in TREND_SHEETS}
         tr[code]['고용계수(명/10억원)'] = [float(x) for x in r[10:14]]
+    # 전산업(경제 전체) 행
+    allk = norm('전산업')
+    tr['ALL'] = {label: pick(tables[s][allk][1], how) if allk in tables[s] else None
+                 for s, label, how in TREND_SHEETS}
+    if allk in tables['18. 취업계수 및 고용계수']:
+        tr['ALL']['고용계수(명/10억원)'] = [float(x) for x in tables['18. 취업계수 및 고용계수'][allk][0][10:14]]
     employ, trends = emp, tr
     return emit({'basic': len(mapping), 'employment': len(employ)})
 
@@ -593,3 +605,88 @@ def heatmap(level, kind):
     m = d[key]
     return emit({'codes': d['codes'], 'names': d['names'], 'kind': key,
                  'matrix': [[round(float(v), 6) for v in row] for row in m], 'max': float(m.max())})
+
+
+# ---------------------------------------------------------------- 2020~2023 추이 (주요표)
+def trend_all(indicator):
+    """대분류 33개 부문과 전산업의 지표 4년 추이. 단위는 지표 이름에 표기."""
+    if trends is None:
+        raise ValueError('주요표를 먼저 불러오세요.')
+    rows = []
+    for code, name in names_by['33'].items():
+        v = trends[code].get(indicator)
+        if v:
+            rows.append({'code': code, 'name': name, 'values': v, 'change': v[3] - v[0]})
+    allv = trends['ALL'].get(indicator)
+    return emit({'indicator': indicator, 'years': TREND_YEARS, 'rows': rows,
+                 'all': {'code': 'ALL', 'name': '전산업', 'values': allv, 'change': allv[3] - allv[0]} if allv else None,
+                 'indicators': [k for k in trends['ALL'] if trends['ALL'][k]]})
+
+
+# ---------------------------------------------------------------- 공급망 취약성
+def supply_risk(level, code):
+    """수입품 i 하나에 대한 부문별 직간접 의존도.
+    직접 = Am[i, j] (부문 j 산출 1원당 수입 i 직접 투입)
+    직간접 = (Am L)[i, j] (부문 j 최종수요 1원이 경제 전체에서 유발하는 수입 i)
+    노출액 = (Am L)[i, j] × 부문 j의 국산 최종수요 (백만원)"""
+    d = need(level)
+    if code not in d['index']:
+        raise ValueError('부문 코드를 찾을 수 없습니다: ' + code)
+    i = d['index'][code]
+    total = d['Am'][i, :] @ d['L']
+    direct = d['Am'][i, :]
+    yd = d['Yd'][:, 7]
+    expo = total * yd
+    imp_mid = float(d['Zm'][i, :].sum())
+    imp_fd = float(d['Ym'][i, 7])
+    rows = [{'code': c, 'name': nm, 'direct': float(direct[j] * 1000), 'total': float(total[j] * 1000),
+             'indirect': float((total[j] - direct[j]) * 1000), 'indirectShare': float((total[j] - direct[j]) / total[j] * 100) if total[j] > 0 else 0.0,
+             'exposure': float(expo[j]), 'exposureShare': float(expo[j] / expo.sum() * 100) if expo.sum() > 0 else 0.0}
+            for j, (c, nm) in enumerate(zip(d['codes'], d['names']))]
+    rows.sort(key=lambda r: -r['total'])
+    return emit({'level': level, 'code': code, 'name': d['names'][i],
+                 'imports': float(d['imports'][i]), 'importMid': imp_mid, 'importFinal': imp_fd,
+                 'importShareOfSupply': float(d['imports'][i] / d['supply'][i] * 100) if d['supply'][i] else 0.0,
+                 'rows': rows, 'check': float(expo.sum())})
+
+
+def import_items(level):
+    """수입이 있는 부문 목록(수입액 큰 순)."""
+    d = need(level)
+    items = [{'code': c, 'name': nm, 'imports': float(d['imports'][j])}
+             for j, (c, nm) in enumerate(zip(d['codes'], d['names'])) if d['imports'][j] > 0]
+    items.sort(key=lambda r: -r['imports'])
+    return emit(items)
+
+
+# ---------------------------------------------------------------- 두 부문 비교
+def pair_compare(level, a, b):
+    d = need(level)
+    out = []
+    ec = employment_coefs(level)
+    for code in (a, b):
+        if code not in d['index']:
+            raise ValueError('부문 코드를 찾을 수 없습니다: ' + code)
+        j = d['index'][code]
+        X = d['X'][j]
+        va = d['va'][j]
+        vp = {k: float(d['va_parts'][k][j]) for k in ['9610', '9621', '9622', '9630']}
+        fd_tot = d['fd_sheets']['production'][j, 7]
+        top_in = sorted(range(len(d['codes'])), key=lambda i: -d['Z'][i, j])[:5]
+        top_out = sorted(range(len(d['codes'])), key=lambda k: -d['Z'][j, k])[:5]
+        out.append({
+            'code': code, 'name': d['names'][j], 'output': float(X), 'valueAdded': float(va),
+            'vaRate': float(va / X * 100) if X else 0.0, 'midRate': float(d['mid_in'][j] / X * 100) if X else 0.0,
+            'importDep': float(d['mid_in_m'][j] / X * 100) if X else 0.0,
+            'exportRate': float(d['Yt'][j, 6] / X * 100) if X else 0.0,
+            'production': float(d['L'][:, j].sum()), 'vaMult': float(d['V'][:, j].sum()), 'impMult': float(d['M'][:, j].sum()),
+            'backward': float(d['bl'][j]), 'forward': float(d['fl'][j]),
+            'jobs': float((ec[0] * d['L'][:, j]).sum()) if ec is not None else None,
+            'laborShare': vp['9610'] / va * 100 if va else 0.0, 'profitShare': vp['9621'] / va * 100 if va else 0.0,
+            'capitalShare': vp['9622'] / va * 100 if va else 0.0, 'taxShare': vp['9630'] / va * 100 if va else 0.0,
+            'exportDependency': float(d['fd_sheets']['production'][j, 6] / fd_tot * 100) if fd_tot else 0.0,
+            'consumptionDependency': float(d['fd_sheets']['production'][j, 0] / fd_tot * 100) if fd_tot else 0.0,
+            'topInputs': [{'name': d['names'][i], 'value': float(d['Z'][i, j])} for i in top_in],
+            'topBuyers': [{'name': d['names'][k], 'value': float(d['Z'][j, k])} for k in top_out],
+        })
+    return emit({'level': level, 'pair': out, 'approxEmployment': level != '33'})

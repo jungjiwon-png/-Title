@@ -1,7 +1,8 @@
 // 별도 작업 공간(Web Worker)에서 Pyodide(Python)를 실행한다.
 const BASE = 'https://cdn.jsdelivr.net/pyodide/v0.27.7/full/';
 const ALLOWED = ['explore', 'structure', 'sector_detail', 'linkage', 'final_demand',
-                 'simulate', 'compare', 'basic_list', 'price_effect', 'heatmap'];
+                 'simulate', 'compare', 'basic_list', 'price_effect', 'heatmap',
+                 'trend_all', 'supply_risk', 'import_items', 'pair_compare'];
 let py = null;
 let chain = Promise.resolve();
 

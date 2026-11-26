@@ -64,3 +64,4 @@ caption .csv{margin:0 0 0 8px;padding:1px 9px;font-size:.78rem;background:#e2ece
 button.preset{background:#fff;color:#145c70;border:1px solid #145c70;margin:0}
 button.preset:hover:not(:disabled){background:#eaf5f5}
 .summary{background:#fff8ec;border:1px solid #f0d9ad;border-radius:8px;padding:12px 14px;margin:12px 0;line-height:1.7}
+.track.stack{display:flex}.track.stack .fill{border-radius:0}.track.stack .fill:first-child{border-radius:4px 0 0 4px}

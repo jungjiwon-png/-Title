@@ -100,6 +100,7 @@ async function ensureAux() {
   await call('load_aux', {map, main}, [map, main]);
   basicList = await call('basic_list', []);
   auxReady = true;
+  initTrend();
 }
 async function loadLevels(levels) {
   if (busy) return;
@@ -156,7 +157,8 @@ async function setLevel(lv) {
   current = lv;
   for (const id of ['sheet', 'row', 'row-search', 'col-search', 'structure-search', 'linkage-filter', 'linkage-search',
                     'fd-search', 'sector-search', 'sector', 'mode', 'item', 'amount', 'add', 'run', 'aggregate',
-                    'heat-kind', 'price-search', 'price-sector', 'price-type', 'price-pct', 'price-add', 'wage-pct', 'price-run']) $(id).disabled = false;
+                    'heat-kind', 'price-search', 'price-sector', 'price-type', 'price-pct', 'price-add', 'wage-pct', 'price-run',
+                    'pair-search-a', 'pair-search-b', 'pair-a', 'pair-b', 'supply-search', 'supply-item']) $(id).disabled = false;
   if (changed) {
     $('sheet').replaceChildren(...loaded[lv].sheets.map(s => el('option', {value: s}, s)));
     $('row-search').value = ''; $('row').replaceChildren();
@@ -167,9 +169,11 @@ async function setLevel(lv) {
     basket = []; renderBasket(); invalidate();
     $('detail').hidden = true;
     $('price-search').value = ''; fillPriceSectors(); priceBasket = []; renderPriceBasket(); $('price-results').hidden = true;
+    initPair(lv);
+    await initSupply(lv);
   }
   renderPresets();
-  await Promise.all([explore(), renderStructure(), renderLinkage(), renderFinal(), renderHeatmap()]).catch(e => {
+  await Promise.all([explore(), renderStructure(), renderLinkage(), renderFinal(), renderHeatmap(), renderPair(), renderSupply()]).catch(e => {
     $('status').textContent = shortError(e);
   });
 }
@@ -701,4 +705,182 @@ async function renderHeatmap() {
       transform: `rotate(-60 ${L + k * cell + cell / 2} ${T - 4})`}, c));
   });
   box.replaceChildren(s, el('p', {class: 'note'}, '행(세로): 투입하는(공급) 부문, 열(가로): 투입받는(구매) 부문. 색이 진할수록 투입계수가 큽니다(제곱근 척도, 최댓값 ' + mx.toFixed(3) + '). 코드 이름은 위 산업구조 표에서 확인할 수 있습니다.'));
+}
+
+// ---------------------------------------------------------------- 두 산업 비교
+function fillPairSelect(which, prefer) {
+  const q = $('pair-search-' + which).value.trim(), sel = $('pair-' + which), prev = prefer || sel.value;
+  const list = loaded[current].sectors.filter(match(q));
+  sel.replaceChildren(...list.map(s => el('option', {value: s.code}, s.code + ' ' + s.name)));
+  if (list.some(s => s.code === prev)) sel.value = prev;
+}
+function initPair(lv) {
+  $('pair-search-a').value = ''; $('pair-search-b').value = '';
+  fillPairSelect('a', toLevel('3102', lv)); fillPairSelect('b', toLevel('4011', lv));
+}
+$('pair-search-a').oninput = () => { fillPairSelect('a'); renderPair(); };
+$('pair-search-b').oninput = () => { fillPairSelect('b'); renderPair(); };
+$('pair-a').onchange = () => renderPair();
+$('pair-b').onchange = () => renderPair();
+let pairSeq = 0;
+async function renderPair() {
+  const a = $('pair-a').value, b = $('pair-b').value, lv = current, seq = ++pairSeq;
+  if (!a || !b) { $('pair-out').replaceChildren(el('p', {class: 'note'}, '두 부문을 고르세요.')); return; }
+  try {
+    const d = await call('pair_compare', [lv, a, b]);
+    if (seq !== pairSeq) return;
+    const [A, B] = d.pair;
+    const metrics = [
+      ['총산출 (백만원)', 'output', won], ['부가가치율 (%)', 'vaRate', pct], ['중간투입률 (%)', 'midRate', pct],
+      ['수입의존도 (%)', 'importDep', pct], ['수출률 (%)', 'exportRate', pct],
+      ['생산승수 (원/원)', 'production', coef], ['부가가치승수 (원/원)', 'vaMult', coef], ['수입승수 (원/원)', 'impMult', coef],
+      ['영향력계수 (평균=1)', 'backward', coef], ['감응도계수 (평균=1)', 'forward', coef],
+      ['취업유발계수 (명/10억원)', 'jobs', v => v == null ? '' : pct(v)],
+      ['부가가치 중 피용자보수 (%)', 'laborShare', pct], ['부가가치 중 영업잉여 (%)', 'profitShare', pct],
+      ['부가가치 중 고정자본소모 (%)', 'capitalShare', pct], ['부가가치 중 순생산세 (%)', 'taxShare', pct],
+      ['생산의 수출 의존도 (%)', 'exportDependency', pct], ['생산의 민간소비 의존도 (%)', 'consumptionDependency', pct],
+    ];
+    const rows = metrics.map(([label, k, f]) => ({label, a: A[k], b: B[k], fa: f(A[k]), fb: f(B[k]),
+      ratio: A[k] && B[k] && A[k] > 0 && B[k] > 0 ? B[k] / A[k] : null}));
+    const t = el('table', {}, el('caption', {}, LV[lv].label + ' 기준 두 부문 비교 ', (() => { const bt = el('button', {type: 'button', class: 'small csv'}, 'CSV');
+        bt.onclick = () => downloadCsv('pair-' + a + '-' + b + '.csv', [['지표', A.name, B.name], ...rows.map(r => [r.label, r.a, r.b])]); return bt; })()),
+      el('thead', {}, el('tr', {}, el('th', {}, '지표'), el('th', {class: 'num'}, A.code + ' ' + A.name), el('th', {class: 'num'}, B.code + ' ' + B.name), el('th', {class: 'num'}, 'B ÷ A'))),
+      el('tbody', {}, ...rows.map(r => el('tr', {}, el('td', {}, r.label), el('td', {class: 'num'}, r.fa), el('td', {class: 'num'}, r.fb),
+        el('td', {class: 'num'}, r.ratio == null ? '' : r.ratio.toFixed(2) + '배')))));
+    const x = (A.production >= B.production ? A : B), y = x === A ? B : A;
+    const jx = A.jobs != null && B.jobs != null ? (A.jobs >= B.jobs ? A : B) : null;
+    const summary = '【비교 요약】 ' + x.name + '의 생산승수(' + coef(x.production) + ')가 ' + y.name + '(' + coef(y.production) + ')보다 ' +
+      (x.production / y.production).toFixed(2) + '배 큽니다. ' +
+      (jx ? '국산품 최종수요 10억원당 취업유발은 ' + jx.name + '가 ' + pct(jx.jobs) + '명으로 더 많습니다. ' : '') +
+      '수입승수는 ' + A.name + ' ' + coef(A.impMult) + ', ' + B.name + ' ' + coef(B.impMult) + '이고, 생산의 수출 의존도는 ' +
+      A.name + ' ' + pct(A.exportDependency) + '%, ' + B.name + ' ' + pct(B.exportDependency) + '%입니다. ' +
+      '부가가치 중 근로소득(피용자보수) 비중은 ' + A.name + ' ' + pct(A.laborShare) + '%, ' + B.name + ' ' + pct(B.laborShare) + '%입니다.';
+    const lists = [A, B].map(P => el('div', {},
+      el('h4', {}, P.name + ': 주요 투입처 상위 5 (백만원)'), miniBars(P.topInputs, 'value', r => r.name, ''),
+      el('h4', {}, P.name + ': 주요 판매처 상위 5 (백만원)'),
+      P.topBuyers.filter(r => r.value > 0).length ? miniBars(P.topBuyers.filter(r => r.value > 0), 'value', r => r.name, '')
+        : el('p', {class: 'note'}, '다른 산업에 중간재로 파는 양이 거의 없습니다(대부분 소비·투자·수출 같은 최종수요로 판매).')));
+    $('pair-out').replaceChildren(el('div', {class: 'summary'}, summary), el('div', {class: 'scroll'}, t), el('div', {class: 'grid2'}, ...lists),
+      el('p', {class: 'note'}, d.approxEmployment ? '취업유발계수는 소속 대분류 취업계수를 적용한 근사치입니다.' : '취업유발계수는 2023년 대분류 취업계수를 적용했습니다.'));
+  } catch (e) { $('pair-out').replaceChildren(el('p', {}, shortError(e))); }
+}
+
+// ---------------------------------------------------------------- 공급망 취약성
+const SUPPLY_PRESETS = [
+  {label: '원유', basic: '0621'}, {label: '천연가스(LNG)', basic: '0622'}, {label: '유연탄', basic: '0612'},
+  {label: '철광석', basic: '0711'}, {label: '집적회로(수입 반도체)', basic: '3102'}, {label: '기초무기화합물', basic: '1722'},
+];
+let importList = [];
+async function initSupply(lv) {
+  importList = await cached('import_items', [lv]);
+  if (lv !== current) return;
+  $('supply-search').value = '';
+  fillSupply(toLevel('0621', lv));
+  $('supply-presets').replaceChildren(...SUPPLY_PRESETS.map(p => {
+    const b = el('button', {type: 'button', class: 'preset'}, p.label);
+    b.onclick = async () => {
+      const lv2 = await useFinest();
+      $('supply-search').value = ''; fillSupply(toLevel(p.basic, lv2)); await renderSupply();
+      $('supply').scrollIntoView({behavior: 'smooth', block: 'start'});
+    };
+    return b;
+  }));
+}
+function fillSupply(prefer) {
+  const q = $('supply-search').value.trim(), sel = $('supply-item'), prev = prefer || sel.value;
+  const list = importList.filter(match(q));
+  sel.replaceChildren(...list.map(s => el('option', {value: s.code}, s.code + ' ' + s.name + ' (수입 ' + (s.imports / 1e6).toFixed(1) + '조원)')));
+  if (list.some(s => s.code === prev)) sel.value = prev;
+}
+$('supply-search').oninput = () => { fillSupply(); renderSupply(); };
+$('supply-item').onchange = () => renderSupply();
+let supplySeq = 0;
+async function renderSupply() {
+  const code = $('supply-item').value, lv = current, seq = ++supplySeq;
+  if (!code) { $('supply-out').replaceChildren(el('p', {class: 'note'}, '수입품을 고르세요.')); return; }
+  try {
+    const d = await call('supply_risk', [lv, code]);
+    if (seq !== supplySeq) return;
+    const top3 = d.rows.slice(0, 3).map(r => r.name + '(' + r.total.toFixed(1) + '원)');
+    const byExpo = [...d.rows].sort((p, q) => q.exposure - p.exposure).slice(0, 3).map(r => r.name + '(' + pct(r.exposureShare) + '%)');
+    const dep1 = d.rows.filter(r => r.total >= 1), indirectHeavy = dep1.filter(r => r.indirectShare >= 50).length;
+    const summary = '【결과 요약】 ' + d.name + '은(는) 2023년에 ' + (d.imports / 1e6).toFixed(2) + '조원이 수입되었고, 국내 총공급의 ' +
+      pct(d.importShareOfSupply) + '%가 수입입니다. 최종수요 1,000원당 ' + d.name + ' 의존도가 가장 높은 부문은 ' + top3.join(', ') +
+      '입니다. 실제 수요 규모까지 고려한 노출액이 큰 부문은 ' + byExpo.join(', ') + '로, 공급 차질 시 먼저 영향을 받습니다. ' +
+      '의존도가 1,000원당 1원 이상인 ' + dep1.length + '개 부문 가운데 ' + indirectHeavy + '개는 의존의 절반 이상이 협력 부문을 거친 간접 의존이라, 직접 쓰지 않는 산업도 공급 차질의 영향을 받습니다.';
+    const cards = [['수입액', won(d.imports), '백만원'], ['중간재로 쓰인 수입', won(d.importMid), '백만원'],
+      ['최종수요로 쓰인 수입', won(d.importFinal), '백만원 (재고 감소는 음수)'], ['총공급 중 수입 비중', pct(d.importShareOfSupply), '%']];
+    const top = d.rows.slice(0, 15), max = Math.max(...top.map(r => r.total), 1e-9);
+    const bars = top.map(r => {
+      const f1 = el('div', {class: 'fill'}); f1.style.width = (r.direct / max * 100) + '%';
+      const f2 = el('div', {class: 'fill im'}); f2.style.width = (r.indirect / max * 100) + '%';
+      const tr = el('div', {class: 'track stack'}, f1, f2);
+      return el('div', {class: 'bar'}, r.name + ' · 직간접 ' + r.total.toFixed(1) + '원 (직접 ' + r.direct.toFixed(1) + ' + 간접 ' + r.indirect.toFixed(1) + ')', tr);
+    });
+    const cols = [{key: 'code', label: '코드'}, {key: 'name', label: '부문'},
+      {key: 'total', label: '직간접 의존도(원/1,000원)', num: true, fmt: v => v.toFixed(2)},
+      {key: 'direct', label: '직접(원/1,000원)', num: true, fmt: v => v.toFixed(2)},
+      {key: 'indirect', label: '간접(원/1,000원)', num: true, fmt: v => v.toFixed(2)},
+      {key: 'indirectShare', label: '간접 비중(%)', num: true, fmt: pct},
+      {key: 'exposure', label: '노출액(백만원)', num: true, fmt: won}, {key: 'exposureShare', label: '노출액 비중(%)', num: true, fmt: pct}];
+    const box = el('div', {class: 'scroll'});
+    $('supply-out').replaceChildren(el('div', {class: 'summary'}, summary),
+      el('div', {class: 'cards'}, ...cards.map(([k, v, u]) => el('div', {class: 'card'}, k, el('strong', {}, v), el('span', {}, u)))),
+      el('h3', {}, '의존도 상위 15개 부문 (진한 막대: 직접, 주황: 간접, 원/1,000원)'), el('div', {}, ...bars), box,
+      el('p', {class: 'note'}, '검증: 부문별 노출액 합계 ' + won(d.check) + '백만원 = ' + d.name + ' 중간재 수입액 ' + won(d.importMid) + '백만원'));
+    table(box, cols, d.rows, {file: 'supply-' + code + '-' + lv, sort: 'total', caption: LV[lv].label + ' 기준 ' + d.name + ' 의존도'});
+  } catch (e) { $('supply-out').replaceChildren(el('p', {}, shortError(e))); }
+}
+
+// ---------------------------------------------------------------- 2020~2023 추이
+let trendData = null;
+async function initTrend() {
+  const first = await call('trend_all', ['수입의존도(%)']);
+  $('trend-ind').replaceChildren(...first.indicators.map(k => el('option', {value: k}, k)));
+  $('trend-ind').value = '수입의존도(%)';
+  const opts = () => [el('option', {value: 'ALL'}, '전산업'), ...first.rows.map(r => el('option', {value: r.code}, r.code + ' ' + r.name))];
+  $('trend-a').replaceChildren(...opts()); $('trend-b').replaceChildren(...opts());
+  $('trend-a').value = 'C09'; $('trend-b').value = 'C12';
+  for (const id of ['trend-ind', 'trend-a', 'trend-b']) $(id).disabled = false;
+  trendData = first; drawTrend();
+}
+$('trend-ind').onchange = async () => { trendData = await call('trend_all', [$('trend-ind').value]); drawTrend(); };
+$('trend-a').onchange = drawTrend; $('trend-b').onchange = drawTrend;
+function drawTrend() {
+  const d = trendData; if (!d) return;
+  const find = c => c === 'ALL' ? d.all : d.rows.find(r => r.code === c);
+  const series = [find('ALL'), find($('trend-a').value), find($('trend-b').value)].filter((v, i, arr) => v && arr.indexOf(v) === i);
+  const colors = ['#8c8c8c', '#1f5fbf', '#c47a1c'];
+  const W = 760, H = 330, P = {l: 60, r: 220, t: 20, b: 40};
+  const all = series.flatMap(s => s.values), lo = Math.min(...all), hi = Math.max(...all), pad = (hi - lo) * 0.15 || 1;
+  const y0 = Math.max(0, lo - pad), y1 = hi + pad;
+  const sx = i => P.l + i * (W - P.l - P.r) / 3, sy = v => H - P.b - (v - y0) / (y1 - y0) * (H - P.t - P.b);
+  const g = svg('svg', {viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': d.indicator + ' 추이'});
+  for (let k = 0; k <= 4; k++) { const v = y0 + (y1 - y0) * k / 4;
+    g.append(svg('line', {x1: P.l, x2: W - P.r, y1: sy(v), y2: sy(v), class: 'grid'}));
+    g.append(svg('text', {x: P.l - 6, y: sy(v) + 4, 'text-anchor': 'end', class: 'tick'}, v.toFixed(y1 - y0 >= 5 ? 0 : 1))); }
+  d.years.forEach((yr, i) => g.append(svg('text', {x: sx(i), y: H - 14, 'text-anchor': 'middle', class: 'tick'}, yr + '년')));
+  series.forEach((s, k) => {
+    const c = k === 0 ? colors[0] : colors[k];
+    g.append(svg('path', {d: s.values.map((v, i) => (i ? 'L' : 'M') + sx(i) + ' ' + sy(v)).join(' '), fill: 'none', stroke: c, 'stroke-width': k === 0 ? 2 : 3}));
+    s.values.forEach((v, i) => { const dot = svg('circle', {cx: sx(i), cy: sy(v), r: 4, fill: c});
+      dot.append(svg('title', {}, `${s.name} ${d.years[i]}년: ${v.toFixed(2)}`)); g.append(dot); });
+  });
+  // 오른쪽 끝 라벨: 겹치지 않게 18px 이상 띄운다
+  const labs = series.map((s, k) => ({s, k, y: sy(s.values[3]) + 4})).sort((p, q) => p.y - q.y);
+  for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 18) labs[i].y = labs[i - 1].y + 18;
+  labs.forEach(({s, k, y}) => g.append(svg('text', {x: sx(3) + 12, y, fill: colors[k], class: 'label', 'font-weight': '600'},
+    `${s.name.length > 12 ? s.name.slice(0, 12) + '…' : s.name} ${s.values[3].toFixed(2)}`)));
+  $('trend-chart').replaceChildren(g);
+  const up = [...d.rows].sort((p, q) => q.change - p.change), unit = d.indicator.includes('%') ? '%p' : '명/10억원';
+  $('trend-summary').hidden = false;
+  $('trend-summary').textContent = '【추이 요약】 ' + d.indicator + '의 전산업 값은 2020년 ' + d.all.values[0].toFixed(2) + '에서 2023년 ' + d.all.values[3].toFixed(2) +
+    '로 ' + (d.all.change >= 0 ? '+' : '') + d.all.change.toFixed(2) + unit + ' 변했습니다. 가장 크게 오른 부문은 ' + up.slice(0, 2).map(r => r.name + '(' + (r.change >= 0 ? '+' : '') + r.change.toFixed(2) + ')').join(', ') +
+    ', 가장 크게 내린 부문은 ' + up.slice(-2).reverse().map(r => r.name + '(' + r.change.toFixed(2) + ')').join(', ') + '입니다.';
+  const cols = [{key: 'code', label: '코드'}, {key: 'name', label: '부문'},
+    ...d.years.map((yr, i) => ({key: 'y' + i, label: yr + '년', num: true, fmt: v => v.toFixed(2)})),
+    {key: 'change', label: '변화폭(2023−2020)', num: true, fmt: v => (v >= 0 ? '+' : '') + v.toFixed(2)}];
+  const rows = [d.all, ...d.rows].map(r => ({code: r.code, name: r.name, change: r.change, y0: r.values[0], y1: r.values[1], y2: r.values[2], y3: r.values[3]}));
+  const box = $('trend-table'); box._state = null;
+  table(box, cols, rows, {file: 'trend-' + d.indicator.replace(/[^가-힣a-zA-Z0-9]/g, ''), sort: 'change', caption: '대분류 부문별 ' + d.indicator + ' 추이'});
 }
